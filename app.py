@@ -13,6 +13,11 @@ def overs_to_float(overs):
     balls = round((overs - whole) * 10)
     return whole + balls / 6
 
+def overs_to_balls(overs):
+    whole = int(overs)
+    balls = round((overs - whole) * 10)
+    return whole * 6 + balls
+
 
 class Team:
     def __init__(self, name):
@@ -246,9 +251,11 @@ if st.button("🚀 Calculate"):
     chase_solutions = []
     defend_solutions = []
 
+    max_balls = overs_to_balls(first_overs)
+    
     for balls in range(
-        1,
-        int(first_overs * 6) + 1
+    1,
+    max_balls + 1
     ):
 
         overs = (
