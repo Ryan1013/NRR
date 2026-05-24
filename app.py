@@ -117,10 +117,26 @@ st.dataframe(df, use_container_width=True)
 
 st.header("3️⃣ Final Match Scenario")
 
-team_bat = st.selectbox("Batting First Team", team_names)
-team_chase = st.selectbox("Chasing Team", team_names)
+team_bat = st.selectbox(
+    "Batting First Team",
+    team_names
+)
 
-concerned = st.selectbox("Concerned Team", team_names)
+available_chasers = [
+    team
+    for team in team_names
+    if team != team_bat
+]
+
+team_chase = st.selectbox(
+    "Chasing Team",
+    available_chasers
+)
+
+evaluated_team = st.selectbox(
+    "Team Being Evaluated",
+    team_names
+)
 target_pos = st.number_input("Target Position", 1, n, 1)
 
 first_runs = st.number_input("First Innings Runs", 0, 500, 150)
@@ -132,6 +148,7 @@ first_overs = st.number_input("First Innings Overs", 0.0, 50.0, 20.0)
 # ------------------------------
 
 def simulate_defend(win_margin):
+
     sim = copy.deepcopy(teams)
 
     sim[team_bat].bat(first_runs, first_overs)
@@ -145,13 +162,36 @@ def simulate_defend(win_margin):
 
     sim[team_bat].points += 2
 
-    ranking = sorted(sim.values(), key=lambda x: (x.points, x.nrr()), reverse=True)
-    pos = {team.name: i+1 for i, team in enumerate(ranking)}
+    ranking = sorted(
+        sim.values(),
+        key=lambda x: (x.points, x.nrr()),
+        reverse=True
+    )
 
-    return pos
+    positions = {
+        team.name: idx + 1
+        for idx, team in enumerate(ranking)
+    }
+
+    table = []
+
+    for team in ranking:
+        table.append([
+            team.name,
+            team.points,
+            round(team.nrr(), 4)
+        ])
+
+    table_df = pd.DataFrame(
+        table,
+        columns=["Team", "Points", "NRR"]
+    )
+
+    return positions, table_df
 
 
 def simulate_chase(chase_overs):
+
     sim = copy.deepcopy(teams)
 
     sim[team_bat].bat(first_runs, first_overs)
@@ -164,10 +204,32 @@ def simulate_chase(chase_overs):
 
     sim[team_chase].points += 2
 
-    ranking = sorted(sim.values(), key=lambda x: (x.points, x.nrr()), reverse=True)
-    pos = {team.name: i+1 for i, team in enumerate(ranking)}
+    ranking = sorted(
+        sim.values(),
+        key=lambda x: (x.points, x.nrr()),
+        reverse=True
+    )
 
-    return pos
+    positions = {
+        team.name: idx + 1
+        for idx, team in enumerate(ranking)
+    }
+
+    table = []
+
+    for team in ranking:
+        table.append([
+            team.name,
+            team.points,
+            round(team.nrr(), 4)
+        ])
+
+    table_df = pd.DataFrame(
+        table,
+        columns=["Team", "Points", "NRR"]
+    )
+
+    return positions, table_df
 
 
 # ------------------------------
@@ -176,35 +238,148 @@ def simulate_chase(chase_overs):
 
 if st.button("🚀 Calculate"):
 
+    is_playing = (
+        evaluated_team in
+        [team_bat, team_chase]
+    )
+
     chase_solutions = []
     defend_solutions = []
 
-    for balls in range(6, int(first_overs * 6) + 1):
-        overs = balls // 6 + (balls % 6) / 10
+    for balls in range(
+        1,
+        int(first_overs * 6) + 1
+    ):
 
-        pos = simulate_chase(overs)
+        overs = (
+            balls // 6
+            + (balls % 6) / 10
+        )
 
-        if pos[concerned] <= target_pos:
-            chase_solutions.append(overs)
+        positions, table_df = simulate_chase(
+            overs
+        )
 
-    for margin in range(1, int(first_runs)):
-        pos = simulate_defend(margin)
+        if (
+            positions[evaluated_team]
+            <= target_pos
+        ):
 
-        if pos[concerned] <= target_pos:
-            defend_solutions.append(margin)
+            chase_solutions.append({
+                "overs": overs,
+                "table": table_df
+            })
 
-    st.header("📈 Result")
+    for margin in range(
+        1,
+        int(first_runs)
+    ):
+
+        positions, table_df = simulate_defend(
+            margin
+        )
+
+        if (
+            positions[evaluated_team]
+            <= target_pos
+        ):
+
+            defend_solutions.append({
+                "margin": margin,
+                "table": table_df
+            })
+
+    st.header("📈 Results")
+
+    # ------------------
+    # Chase scenario
+    # ------------------
 
     if chase_solutions:
-        st.success(
-            f"{concerned} must chase in ≤ {round(max(chase_solutions),1)} overs"
+
+        best_chase = max(
+            chase_solutions,
+            key=lambda x: x["overs"]
         )
+
+        if is_playing:
+
+            st.success(
+                f"{evaluated_team} qualifies "
+                f"if they chase "
+                f"{first_runs + 1} in "
+                f"{best_chase['overs']:.1f} "
+                f"overs or fewer."
+            )
+
+        else:
+
+            st.success(
+                f"For {evaluated_team} "
+                f"to finish Top "
+                f"{target_pos}, "
+                f"{team_chase} must not "
+                f"chase faster than "
+                f"{best_chase['overs']:.1f} "
+                f"overs."
+            )
+
+        st.subheader(
+            "Table at Chase Threshold"
+        )
+
+        st.dataframe(
+            best_chase["table"],
+            use_container_width=True
+        )
+
     else:
-        st.error("Chasing not possible")
+
+        st.error(
+            "No chase qualification scenario."
+        )
+
+    # ------------------
+    # Defend scenario
+    # ------------------
 
     if defend_solutions:
-        st.success(
-            f"{concerned} must win by ≥ {min(defend_solutions)} runs"
+
+        best_defend = min(
+            defend_solutions,
+            key=lambda x: x["margin"]
         )
+
+        if is_playing:
+
+            st.success(
+                f"{evaluated_team} qualifies "
+                f"if they win by at least "
+                f"{best_defend['margin']} runs."
+            )
+
+        else:
+
+            st.success(
+                f"For {evaluated_team} "
+                f"to finish Top "
+                f"{target_pos}, "
+                f"{team_bat} must win "
+                f"by at least "
+                f"{best_defend['margin']} runs."
+            )
+
+        st.subheader(
+            "Table at Defending Threshold"
+        )
+
+        st.dataframe(
+            best_defend["table"],
+            use_container_width=True
+        )
+
     else:
-        st.error("Defending not possible")
+
+        st.error(
+            "No defending qualification scenario."
+        )
